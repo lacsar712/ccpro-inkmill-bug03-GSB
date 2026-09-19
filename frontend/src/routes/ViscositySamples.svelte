@@ -75,7 +75,9 @@
     const payload = {
       millId: Number(form.millId),
       sampledAt: form.sampledAt,
-      viscosityPaS: Number(form.viscosityPaS),
+      // 传原始字符串，由服务端用 Decimal 解析，避免 float 精度损失
+      // （number 输入框绑定后可能是 number 或 null，统一转成字符串）
+      viscosityPaS: String(form.viscosityPaS ?? '').trim(),
       tempC: form.tempC === '' ? null : Number(form.tempC),
       notes: form.notes,
     };
@@ -128,7 +130,7 @@
       </label>
     </div>
     <div class="field"><label>取样时间<input type="datetime-local" bind:value={form.sampledAt} /></label></div>
-    <div class="field"><label>粘度 Pa·s<input type="number" step="0.0001" min="0.0001" bind:value={form.viscosityPaS} /></label></div>
+    <div class="field"><label>粘度 Pa·s<input type="number" step="any" min="0.000001" bind:value={form.viscosityPaS} /></label></div>
     <div class="field"><label>温度 ℃<input type="number" step="0.1" bind:value={form.tempC} /></label></div>
     <div class="field full"><label>备注<textarea rows="2" bind:value={form.notes} /></label></div>
   </div>

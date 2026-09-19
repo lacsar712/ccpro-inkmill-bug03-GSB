@@ -15,7 +15,7 @@ class ViscositySample(Base):
         Integer, ForeignKey("mills.id", ondelete="CASCADE"), nullable=False
     )
     sampled_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    viscosity_pa_s: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    viscosity_pa_s: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
     temp_c: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
