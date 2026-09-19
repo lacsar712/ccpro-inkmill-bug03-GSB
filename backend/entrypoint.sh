@@ -27,6 +27,21 @@ PY
 echo "Creating tables..."
 python -c "from app.database import Base, engine; from app import models; Base.metadata.create_all(bind=engine)"
 
+echo "Applying column migrations..."
+python - <<'PY'
+from sqlalchemy import text
+from app.database import engine
+
+# create_all 不会修改已有列；对存量 MySQL 数据卷幂等地加宽粘度列精度
+if engine.dialect.name == "mysql":
+    with engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE viscosity_samples "
+            "MODIFY COLUMN viscosity_pa_s DECIMAL(12,4) NOT NULL"
+        ))
+print("Column migrations applied.")
+PY
+
 if [ "${SEED_ON_START}" = "true" ] || [ "${SEED_ON_START}" = "1" ]; then
   echo "Seeding data..."
   python -c "from app.seed import seed; seed()"

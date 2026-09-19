@@ -1,4 +1,4 @@
-from decimal import Decimal, ROUND_DOWN
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required
@@ -11,33 +11,57 @@ from app.utils import error, normalize_datetime
 
 bp = Blueprint("viscosity_samples", __name__, url_prefix="/api/viscosity-samples")
 
+# 与模型 Numeric(12, 4) 一致的最小存储精度
+VISCOSITY_STEP = Decimal("0.0001")
+# Numeric(12, 4) 可存储的上限
+VISCOSITY_MAX = Decimal("99999999.9999")
 
-def _validate(body: dict) -> str | None:
+
+def _parse_viscosity(raw) -> Decimal | None:
+    """解析粘度输入，返回可写入的 Decimal；非法或不大于 0 时返回 None。"""
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    try:
+        value = Decimal(text)
+    except InvalidOperation:
+        return None
+    if not value.is_finite():
+        return None
+    try:
+        stored = value.quantize(VISCOSITY_STEP, rounding=ROUND_HALF_UP)
+    except InvalidOperation:
+        return None
+    if stored <= 0:
+        return None
+    return stored
+
+
+def _validate(body: dict) -> tuple[str | None, Decimal | None]:
     mill_id = int(body.get("millId") or 0)
     if mill_id <= 0:
-        return "请选择研磨机"
+        return "请选择研磨机", None
 
     db = SessionLocal()
     try:
         if not db.get(Mill, mill_id):
-            return "研磨机不存在"
+            return "研磨机不存在", None
     finally:
         db.close()
 
     sampled_at = str(body.get("sampledAt", "")).strip()
     if not sampled_at:
-        return "取样时间不能为空"
+        return "取样时间不能为空", None
 
-    viscosity = float(body.get("viscosityPaS") or 0)
-    if viscosity < 0:
-        return "粘度(Pa·s)必须大于 0"
+    viscosity = _parse_viscosity(body.get("viscosityPaS"))
+    if viscosity is None:
+        return "粘度(Pa·s)必须大于 0", None
+    if viscosity > VISCOSITY_MAX:
+        return "粘度(Pa·s)超出允许范围", None
 
-    return None
-
-
-def _to_stored_viscosity(raw) -> Decimal:
-    value = Decimal(str(raw)).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
-    return value
+    return None, viscosity
 
 
 @bp.get("")
@@ -59,7 +83,7 @@ def list_samples():
 @jwt_required()
 def create_sample():
     body = request.get_json(silent=True) or {}
-    err = _validate(body)
+    err, viscosity = _validate(body)
     if err:
         return error(err, 400)
 
@@ -73,7 +97,7 @@ def create_sample():
         row = ViscositySample(
             mill_id=int(body["millId"]),
             sampled_at=normalize_datetime(str(body["sampledAt"])),
-            viscosity_pa_s=_to_stored_viscosity(body["viscosityPaS"]),
+            viscosity_pa_s=viscosity,
             temp_c=temp_c,
             notes=str(body.get("notes", "")).strip() or None,
         )
@@ -89,7 +113,7 @@ def create_sample():
 @jwt_required()
 def update_sample(item_id: int):
     body = request.get_json(silent=True) or {}
-    err = _validate(body)
+    err, viscosity = _validate(body)
     if err:
         return error(err, 400)
 
@@ -106,7 +130,7 @@ def update_sample(item_id: int):
 
         row.mill_id = int(body["millId"])
         row.sampled_at = normalize_datetime(str(body["sampledAt"]))
-        row.viscosity_pa_s = _to_stored_viscosity(body["viscosityPaS"])
+        row.viscosity_pa_s = viscosity
         row.temp_c = temp_c
         row.notes = str(body.get("notes", "")).strip() or None
         db.commit()
